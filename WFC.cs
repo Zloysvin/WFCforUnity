@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Unity.Mathematics;
 using Unity.VisualScripting;
@@ -44,23 +45,38 @@ public class WFC : MonoBehaviour
     // карта которая представлена тайлами
     private Tile[,] map;
 
+    private Module[] previusModules;
+    private int previusY;
+    private int previusX;
+
+    private int tryCount;
+    private bool needToRegenerate = true;
+
     void Start()
     {
         // в методе старт у нас ициализируется сама карта, и происходит генерация
+        GetModulesFromPrefabs();
 
-        map = new Tile[height, width];
-        for (int i = 0; i < height; i++)
+        while (needToRegenerate)
         {
-            for (int j = 0; j < width; j++)
+            map = new Tile[height, width];
+            for (int i = 0; i < height; i++)
             {
-                map[i, j] = new Tile();
+                for (int j = 0; j < width; j++)
+                {
+                    map[i, j] = new Tile();
+                }
+            }
+
+
+            InsertRandom(1, 1);
+            needToRegenerate = false;
+            Solve();
+            if (!needToRegenerate)
+            {
+                Draw();
             }
         }
-
-        GetModulesFromPrefabs();
-        InsertRandom(1, 1);
-        Solve();
-        Draw();
     }
 
     // так как вводить значение сокетов в массиве немного не удобно, я практиковал создание отдельного класа под названием MonoModule который в свою
@@ -125,33 +141,56 @@ public class WFC : MonoBehaviour
             // если минимальное значение было найдено, мы его калапсируем
             if (minX > -1 && minY > -1)
                 Collapse(minY, minX);
+
+            if (needToRegenerate)
+                break;
         }
     }
 
     // метод калапсации определенного тайла
     private void Collapse(int y, int x)
     {
-        map[y, x].hasDeveloped = true;
-        System.Random rnd = new System.Random();
 
-        // выбираем случайны модуль из набора модулей этого тайла
-        Module module = map[y, x].Modules[rnd.Next(map[y, x].Modules.Count)];
-        // удаляем все предыдущие модули 
-        map[y, x].Modules.Clear();
-        // добавляем выбранный модуль как единственный
-        map[y, x].Modules.Add(module);
+        if (map[y, x].Modules.Count != 0)
+        {
+            map[y, x].hasDeveloped = true;
+            System.Random rnd = new System.Random();
 
-        // задаем соседние клеточки по вертикали и горизонтале
-        SetNeighborCells(y, x, -1, 0, module);
-        SetNeighborCells(y, x, 0, 1, module);
-        SetNeighborCells(y, x, 1, 0, module);
-        SetNeighborCells(y, x, 0, -1, module);
+            // выбираем случайны модуль из набора модулей этого тайла
+            Module module = map[y, x].Modules[rnd.Next(map[y, x].Modules.Count)];
+            previusModules = map[y, x].Modules.ToArray();
+            previusY = y;
+            previusX = x;
+            // удаляем все предыдущие модули 
+            map[y, x].Modules.Clear();
+            // добавляем выбранный модуль как единственный
+            map[y, x].Modules.Add(module);
 
-        // задаем модули клеток по диагонали учитывая соседние от нее клетки. это нужно для избежание конфликтов сокетов
-        FixDiagonals(y, x, -1, 1);
-        FixDiagonals(y, x, 1, 1);
-        FixDiagonals(y, x, 1, -1);
-        FixDiagonals(y, x, -1, -1);
+            // задаем соседние клеточки по вертикали и горизонтале
+            SetNeighborCells(y, x, -1, 0, module);
+            SetNeighborCells(y, x, 0, 1, module);
+            SetNeighborCells(y, x, 1, 0, module);
+            SetNeighborCells(y, x, 0, -1, module);
+
+            // задаем модули клеток по диагонали учитывая соседние от нее клетки. это нужно для избежание конфликтов сокетов
+            FixDiagonals(y, x, -1, 1);
+            FixDiagonals(y, x, 1, 1);
+            FixDiagonals(y, x, 1, -1);
+            FixDiagonals(y, x, -1, -1);
+        }
+        else
+        {
+            if (tryCount >= 5)
+            {
+                needToRegenerate = true;
+                return;
+            }
+            Debug.Log($"Try Count no {tryCount + 1}");
+            tryCount++;
+            map[previusY, previusX].hasDeveloped = false;
+            map[previusY, previusX].Modules.Clear();
+            map[previusY, previusX].Modules.AddRange(previusModules);
+        }
     }
 
     // методы для здачи клетки по вертикали или горизонатале
